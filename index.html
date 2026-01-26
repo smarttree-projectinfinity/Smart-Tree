@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Smart Air Quality Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  height:100%;
+  overflow:hidden;
+  font-family:Arial, sans-serif;
+}
+
+/* SKY */
+#sky{
+  position:fixed;
+  inset:0;
+  background:linear-gradient(#87ceeb,#dff5ff);
+  transition:background 1s;
+}
+
+/* CLOUDS */
+.cloud{
+  position:absolute;
+  top:10%;
+  width:240px;
+  height:90px;
+  background:white;
+  border-radius:60px;
+  opacity:0.85;
+  animation:moveCloud 90s linear infinite;
+}
+
+.cloud::before,.cloud::after{
+  content:"";
+  position:absolute;
+  background:white;
+  width:120px;
+  height:120px;
+  top:-50px;
+  border-radius:50%;
+}
+.cloud::before{left:20px;}
+.cloud::after{right:20px;}
+
+@keyframes moveCloud{
+  from{left:-300px;}
+  to{left:110%;}
+}
+
+/* VALUE BOX */
+#valueBox{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  background:rgba(0,0,0,0.6);
+  padding:45px 70px;
+  border-radius:30px;
+  text-align:center;
+  color:white;
+  border:12px solid #2ecc71;
+  box-shadow:0 0 40px rgba(0,0,0,0.6);
+  transition:border-color 1s, transform 0.5s;
+}
+
+.blink{
+  animation:blinkBorder 1s infinite;
+}
+
+@keyframes blinkBorder{
+  0%,100%{border-color:#e74c3c;}
+  50%{border-color:#ffb3b3;}
+}
+
+#value{
+  font-size:78px;
+  font-weight:bold;
+}
+
+#status{
+  font-size:24px;
+  margin-top:10px;
+}
+
+/* GRAPH BUTTON */
+#graphBtn{
+  margin-top:18px;
+  padding:10px 22px;
+  font-size:18px;
+  border:none;
+  border-radius:20px;
+  background:#3498db;
+  color:white;
+  cursor:pointer;
+}
+
+/* GRAPH MODAL */
+#graphModal{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.7);
+  display:none;
+  align-items:center;
+  justify-content:center;
+}
+
+#graphBox{
+  background:white;
+  padding:20px;
+  border-radius:20px;
+  width:90%;
+  max-width:600px;
+}
+
+canvas{
+  width:100%;
+  height:300px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="sky"></div>
+
+<div class="cloud" style="top:12%"></div>
+<div class="cloud" style="top:24%;opacity:0.7;animation-duration:70s"></div>
+
+<div id="valueBox">
+  <div id="value">--</div>
+  <div id="status">Waiting for data</div>
+  <button id="graphBtn" onclick="openGraph()">View Graph</button>
+</div>
+
+<div id="graphModal" onclick="closeGraph()">
+  <div id="graphBox" onclick="event.stopPropagation()">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<audio id="alarm">
+  <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg">
+</audio>
+
+<script>
+let AQ = 250;
+let history = [];
+
+/* UPDATE UI */
+function updateUI(){
+  const sky = document.getElementById("sky");
+  const box = document.getElementById("valueBox");
+  const alarm = document.getElementById("alarm");
+
+  box.classList.remove("blink");
+
+  if(AQ < 300){
+    sky.style.background = "linear-gradient(#87ceeb,#dff5ff)";
+    box.style.borderColor = "#2ecc71";
+    alarm.pause(); alarm.currentTime = 0;
+  }
+  else if(AQ < 600){
+    sky.style.background = "linear-gradient(#bdbdbd,#eeeeee)";
+    box.style.borderColor = "#f1c40f";
+    alarm.pause(); alarm.currentTime = 0;
+  }
+  else{
+    sky.style.background = "linear-gradient(#555,#222)";
+    box.classList.add("blink");
+    alarm.play();
+  }
+}
+
+/* SET VALUE */
+function setAQ(v){
+  AQ = v;
+  history.push(v);
+  if(history.length>20) history.shift();
+
+  document.getElementById("value").innerText = v + " AQ";
+  document.getElementById("status").innerText =
+    v < 300 ? "Air Quality: GOOD" :
+    v < 600 ? "Air Quality: MODERATE" :
+              "Air Quality: POOR";
+
+  updateUI();
+}
+
+/* GRAPH */
+function openGraph(){
+  document.getElementById("graphModal").style.display="flex";
+  drawGraph();
+}
+function closeGraph(){
+  document.getElementById("graphModal").style.display="none";
+}
+
+function drawGraph(){
+  const c = document.getElementById("chart");
+  const ctx = c.getContext("2d");
+  c.width = 600; c.height = 300;
+  ctx.clearRect(0,0,600,300);
+
+  ctx.beginPath();
+  ctx.moveTo(40,260);
+  history.forEach((v,i)=>{
+    let x = 40 + i*(520/(history.length-1||1));
+    let y = 260 - (v/1000)*220;
+    ctx.lineTo(x,y);
+  });
+  ctx.strokeStyle="#e74c3c";
+  ctx.lineWidth=3;
+  ctx.stroke();
+}
+
+/* THINGSPEAK */
+const CHANNEL_ID = "3238822";
+const FIELD = 1;
+
+async function fetchAQ(){
+  try{
+    const r = await fetch(
+      `https://api.thingspeak.com/channels/${CHANNEL_ID}/fields/${FIELD}/last.json`
+    );
+    const d = await r.json();
+    const v = parseFloat(d[`field${FIELD}`]);
+    if(!isNaN(v)) setAQ(v);
+  }catch{}
+}
+
+setInterval(fetchAQ,15000);
+fetchAQ();
+
+/* DEMO */
+// setAQ(800);
+</script>
+
+</body>
+</html>
