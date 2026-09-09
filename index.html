@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,7 +12,7 @@ html,body{
   padding:0;
   height:100%;
   overflow:hidden;
-  font-family:Arial, sans-serif;
+  font-family:Arial,sans-serif;
 }
 
 /* SKY */
@@ -43,6 +44,7 @@ html,body{
   top:-50px;
   border-radius:50%;
 }
+
 .cloud::before{left:20px;}
 .cloud::after{right:20px;}
 
@@ -64,7 +66,7 @@ html,body{
   color:white;
   border:12px solid #2ecc71;
   box-shadow:0 0 40px rgba(0,0,0,0.6);
-  transition:border-color 1s, transform 0.5s;
+  transition:border-color 1s,transform 0.5s;
 }
 
 .blink{
@@ -83,6 +85,11 @@ html,body{
 
 #status{
   font-size:24px;
+  margin-top:10px;
+}
+
+#connection{
+  font-size:16px;
   margin-top:10px;
 }
 
@@ -128,12 +135,25 @@ canvas{
 <div id="sky"></div>
 
 <div class="cloud" style="top:12%"></div>
-<div class="cloud" style="top:24%;opacity:0.7;animation-duration:70s"></div>
+<div class="cloud"
+     style="top:24%;opacity:0.7;animation-duration:70s"></div>
 
 <div id="valueBox">
+
   <div id="value">--</div>
-  <div id="status">Waiting for data</div>
-  <button id="graphBtn" onclick="openGraph()">View Graph</button>
+
+  <div id="status">
+    Waiting for data
+  </div>
+
+  <div id="connection">
+    Connecting to 10.36.74.11...
+  </div>
+
+  <button id="graphBtn" onclick="openGraph()">
+    View Graph
+  </button>
+
 </div>
 
 <div id="graphModal" onclick="closeGraph()">
@@ -147,97 +167,296 @@ canvas{
 </audio>
 
 <script>
-let AQ = 250;
+
+let AQ = 0;
 let history = [];
 
-/* UPDATE UI */
+
+/* ==========================================
+   SERVER
+   ========================================== */
+
+const SERVER_URL = "http://10.36.74.11/mq7";
+
+const UPDATE_INTERVAL = 500;
+
+
+/* ==========================================
+   UPDATE UI
+   ========================================== */
+
 function updateUI(){
-  const sky = document.getElementById("sky");
-  const box = document.getElementById("valueBox");
-  const alarm = document.getElementById("alarm");
+
+  const sky =
+    document.getElementById("sky");
+
+  const box =
+    document.getElementById("valueBox");
+
+  const alarm =
+    document.getElementById("alarm");
 
   box.classList.remove("blink");
 
+
   if(AQ < 300){
-    sky.style.background = "linear-gradient(#87ceeb,#dff5ff)";
-    box.style.borderColor = "#2ecc71";
-    alarm.pause(); alarm.currentTime = 0;
+
+    sky.style.background =
+      "linear-gradient(#87ceeb,#dff5ff)";
+
+    box.style.borderColor =
+      "#2ecc71";
+
+    alarm.pause();
+    alarm.currentTime = 0;
+
   }
+
   else if(AQ < 600){
-    sky.style.background = "linear-gradient(#bdbdbd,#eeeeee)";
-    box.style.borderColor = "#f1c40f";
-    alarm.pause(); alarm.currentTime = 0;
+
+    sky.style.background =
+      "linear-gradient(#bdbdbd,#eeeeee)";
+
+    box.style.borderColor =
+      "#f1c40f";
+
+    alarm.pause();
+    alarm.currentTime = 0;
+
   }
+
   else{
-    sky.style.background = "linear-gradient(#555,#222)";
+
+    sky.style.background =
+      "linear-gradient(#555,#222)";
+
     box.classList.add("blink");
-    alarm.play();
+
+    alarm.play().catch(()=>{});
+
   }
+
 }
 
-/* SET VALUE */
-function setAQ(v){
-  AQ = v;
-  history.push(v);
-  if(history.length>20) history.shift();
 
-  document.getElementById("value").innerText = v + " AQ";
+/* ==========================================
+   SET VALUE
+   ========================================== */
+
+function setAQ(v){
+
+  AQ = Math.round(v);
+
+  history.push(AQ);
+
+  if(history.length > 20){
+    history.shift();
+  }
+
+
+  document.getElementById("value").innerText =
+    AQ + " AQ";
+
+
   document.getElementById("status").innerText =
-    v < 300 ? "Air Quality: GOOD" :
-    v < 600 ? "Air Quality: MODERATE" :
-              "Air Quality: POOR";
+    AQ < 300
+      ? "Air Quality: GOOD"
+      : AQ < 600
+        ? "Air Quality: MODERATE"
+        : "Air Quality: POOR";
+
 
   updateUI();
+
 }
 
-/* GRAPH */
-function openGraph(){
-  document.getElementById("graphModal").style.display="flex";
-  drawGraph();
-}
-function closeGraph(){
-  document.getElementById("graphModal").style.display="none";
-}
 
-function drawGraph(){
-  const c = document.getElementById("chart");
-  const ctx = c.getContext("2d");
-  c.width = 600; c.height = 300;
-  ctx.clearRect(0,0,600,300);
-
-  ctx.beginPath();
-  ctx.moveTo(40,260);
-  history.forEach((v,i)=>{
-    let x = 40 + i*(520/(history.length-1||1));
-    let y = 260 - (v/1000)*220;
-    ctx.lineTo(x,y);
-  });
-  ctx.strokeStyle="#e74c3c";
-  ctx.lineWidth=3;
-  ctx.stroke();
-}
-
-/* THINGSPEAK */
-const CHANNEL_ID = "3238822";
-const FIELD = 1;
+/* ==========================================
+   RECEIVE DATA FROM ESP32 SERVER
+   ========================================== */
 
 async function fetchAQ(){
+
   try{
-    const r = await fetch(
-      `https://api.thingspeak.com/channels/${CHANNEL_ID}/fields/${FIELD}/last.json`
+
+    const response =
+      await fetch(
+        SERVER_URL,
+        {
+          method:"GET",
+          cache:"no-store"
+        }
+      );
+
+
+    if(!response.ok){
+
+      throw new Error(
+        "HTTP " + response.status
+      );
+
+    }
+
+
+    const data =
+      await response.json();
+
+
+    console.log(
+      "Received:",
+      data
     );
-    const d = await r.json();
-    const v = parseFloat(d[`field${FIELD}`]);
-    if(!isNaN(v)) setAQ(v);
-  }catch{}
+
+
+    const raw =
+      Number(data.mq7Raw);
+
+
+    if(
+      Number.isFinite(raw) &&
+      raw >= 0 &&
+      raw <= 1000
+    ){
+
+      setAQ(raw);
+
+
+      document.getElementById(
+        "connection"
+      ).innerText =
+        "● LIVE • 10.36.74.11";
+
+    }
+
+    else{
+
+      throw new Error(
+        "Invalid MQ7 value"
+      );
+
+    }
+
+  }
+
+  catch(error){
+
+    console.error(
+      "Server error:",
+      error
+    );
+
+
+    document.getElementById(
+      "connection"
+    ).innerText =
+      "● SERVER DISCONNECTED";
+
+  }
+
 }
 
-setInterval(fetchAQ,15000);
+
+/* ==========================================
+   GRAPH
+   ========================================== */
+
+function openGraph(){
+
+  document.getElementById(
+    "graphModal"
+  ).style.display = "flex";
+
+  drawGraph();
+
+}
+
+
+function closeGraph(){
+
+  document.getElementById(
+    "graphModal"
+  ).style.display = "none";
+
+}
+
+
+function drawGraph(){
+
+  const c =
+    document.getElementById("chart");
+
+  const ctx =
+    c.getContext("2d");
+
+
+  c.width = 600;
+  c.height = 300;
+
+
+  ctx.clearRect(
+    0,
+    0,
+    600,
+    300
+  );
+
+
+  if(history.length === 0){
+    return;
+  }
+
+
+  ctx.beginPath();
+
+
+  history.forEach((v,i)=>{
+
+    const x =
+      40 +
+      i * (
+        520 /
+        (history.length - 1 || 1)
+      );
+
+
+    const y =
+      260 -
+      (v / 1000) * 220;
+
+
+    if(i === 0){
+      ctx.moveTo(x,y);
+    }
+    else{
+      ctx.lineTo(x,y);
+    }
+
+  });
+
+
+  ctx.strokeStyle =
+    "#e74c3c";
+
+  ctx.lineWidth = 3;
+
+  ctx.stroke();
+
+}
+
+
+/* ==========================================
+   START RECEIVING DATA
+   ========================================== */
+
 fetchAQ();
 
-/* DEMO */
-// setAQ(800);
+setInterval(
+  fetchAQ,
+  UPDATE_INTERVAL
+);
+
 </script>
 
 </body>
 </html>
+```
